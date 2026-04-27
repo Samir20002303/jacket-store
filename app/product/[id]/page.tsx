@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { ImmersiveHome } from "@/src/components/immersive-home";
-import { products } from "@/src/data/products";
+import { getProductById, getProducts } from "@/src/data/products";
 
 type ProductPageProps = {
   params: Promise<{ id: string }>;
@@ -8,11 +8,12 @@ type ProductPageProps = {
 
 export default async function ProductPage({ params }: ProductPageProps) {
   const { id } = await params;
-  const exists = products.some((product) => product.id === id);
+  const product = await getProductById(id);
+  const allproducts = await getProducts();
 
-  if (!exists) {
+  if (!product) {
     notFound();
   }
 
-  return <ImmersiveHome initialProductId={id} />;
+  return <ImmersiveHome products={allproducts} initialProductId={id} />;
 }

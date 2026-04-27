@@ -3,12 +3,22 @@
 import Image from "next/image";
 import { StandardPageShell } from "@/src/components/standard-page-shell";
 import { HeartIcon } from "@/src/components/icons";
-import { products } from "@/src/data/products";
+import { useEffect, useState } from "react";
+import { getProducts, type Product } from "@/src/data/products";
 import { useStore } from "@/src/context/store-context";
 
 export default function WishlistPage() {
   const { wishlist, toggleWishlist } = useStore();
-  const likedProducts = products.filter((product) => wishlist.includes(product.id));
+  const [likedProducts, setLikedProducts] = useState<Product[]>([]);
+
+  useEffect(() => {
+    async function loadProducts() {
+      const allProducts = await getProducts();
+      const filtered = allProducts.filter((product) => wishlist.includes(product.id));
+      setLikedProducts(filtered);
+    }
+    loadProducts();
+  }, [wishlist]);
 
   return (
     <StandardPageShell

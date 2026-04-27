@@ -2,15 +2,19 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { products, SIZES, type Product, type Size } from "@/src/data/products";
+import { SIZES, type Product, type Size } from "@/src/data/products";
 import { useStore } from "@/src/context/store-context";
 import { HeartIcon } from "@/src/components/icons";
 import { SiteHeader } from "@/src/components/site-header";
+import { useRouter, usePathname } from "next/navigation";
+
 
 const WHEEL_COOLDOWN_MS = 420;
 const SWIPE_THRESHOLD_PX = 48;
 
+
 type ImmersiveHomeProps = {
+  products: Product[];
   initialProductId?: string;
 };
 
@@ -38,25 +42,48 @@ function getFirstAvailableSize(
   return SIZES.find((size) => getRemainingStock(product, size) > 0) ?? "S";
 }
 
-function getProductIndexById(productId?: string) {
+function getProductIndexById(products: Product[], productId?: string) {
   if (!productId) return 0;
   const index = products.findIndex((product) => product.id === productId);
   return index >= 0 ? index : 0;
 }
 
-export function ImmersiveHome({ initialProductId }: ImmersiveHomeProps) {
+export function ImmersiveHome({ products, initialProductId }: ImmersiveHomeProps) {
+
   const [currentProductIndex, setCurrentProductIndex] = useState(() =>
-    getProductIndexById(initialProductId),
+    getProductIndexById(products, initialProductId),
+
   );
+
+  //  ANNIMATION - ne se déclenche qu'une seule fois, ignore les changements d'URL
+  // const hasEntered = useRef(false);
+  // const [showImage, setShowImage] = useState(false);
+
+  // useEffect(() => {
+  //   if (!hasEntered.current) {
+  //     hasEntered.current = true;
+  //     requestAnimationFrame(() => {
+  //       requestAnimationFrame(() => {
+  //         setShowImage(true);
+  //       });
+  //     });
+  //   } else {
+  //     // Pour les navigations suivantes (changement d'URL), l'image est déjà visible
+  //     setShowImage(true);
+  //   }
+  // }, []);
+
+  const router = useRouter();
+  const pathname = usePathname();
+
+
   const {
     addToCart: addToCartItem,
     getRemainingStock,
     toggleWishlist,
     isWishlisted,
   } = useStore();
-  const [selectedSize, setSelectedSize] = useState<Size>(
-    getFirstAvailableSize(products[0], getRemainingStock),
-  );
+  const [selectedSize, setSelectedSize] = useState<Size>("S");
   const [isChanging, setIsChanging] = useState(false);
 
   const touchStartX = useRef<number | null>(null);
@@ -65,17 +92,25 @@ export function ImmersiveHome({ initialProductId }: ImmersiveHomeProps) {
   const currentProduct = products[currentProductIndex];
 
   const goToProduct = useCallback((targetIndex: number) => {
+    if (products.length === 0) return;
     const normalized =
       (targetIndex + products.length) %
       (products.length === 0 ? 1 : products.length);
     setIsChanging(true);
+
+    const nextProduct = products[normalized];
+    const nextUrl = `/product/${nextProduct.id}`;
+    if (pathname !== nextUrl) {
+      router.replace(nextUrl);
+    }
+
     window.setTimeout(() => {
       const nextProduct = products[normalized];
       setCurrentProductIndex(normalized);
       setSelectedSize(getFirstAvailableSize(nextProduct, getRemainingStock));
       window.setTimeout(() => setIsChanging(false), 220);
     }, 110);
-  }, [getRemainingStock]);
+  }, [getRemainingStock, products, pathname, router]);
 
   const goNext = useCallback(() => {
     goToProduct(currentProductIndex + 1);
@@ -123,10 +158,23 @@ export function ImmersiveHome({ initialProductId }: ImmersiveHomeProps) {
       : getFirstAvailableSize(currentProduct, getRemainingStock);
   const selectedStock = getRemainingStock(currentProduct, resolvedSize);
 
-  const addToCart = () => {
-    if (selectedStock < 1) return;
-    addToCartItem(currentProduct, resolvedSize);
+  const [isAddingToCart, setIsAddingToCart] = useState(false);
+
+  const addToCart = async () => {
+    if (selectedStock < 1 || isAddingToCart) return;
+    setIsAddingToCart(true);
+    await addToCartItem(currentProduct, resolvedSize);
+    setIsAddingToCart(false);
   };
+
+  if (!currentProduct) {
+    return (
+      <main className="grid h-screen w-screen place-items-center bg-black text-white">
+        <p className="text-sm text-white/75">No products available.</p>
+      </main>
+    );
+  }
+  const nextProduct = products[(currentProductIndex + 1) % products.length] ?? currentProduct;
 
   return (
     <main
@@ -144,9 +192,8 @@ export function ImmersiveHome({ initialProductId }: ImmersiveHomeProps) {
 
         <section className="grid flex-1 grid-cols-1 items-center gap-6 lg:grid-cols-[1fr_1.2fr_1fr]">
           <div
-            className={`space-y-5 transition-all duration-300 ${
-              isChanging ? "translate-y-3 opacity-0" : "translate-y-0 opacity-100"
-            }`}
+            className={`space-y-5 transition-all duration-300 ${isChanging ? "translate-y-3 opacity-0" : "translate-y-0 opacity-100"
+              }`}
           >
             <p className="text-xs tracking-[0.2em] uppercase text-white/80">
               Signature Outerwear
@@ -159,36 +206,43 @@ export function ImmersiveHome({ initialProductId }: ImmersiveHomeProps) {
               {currentProduct.description}
             </p>
             <div className="flex justify-left align-center items-center gap-2">
-            <button
-              type="button"
-              onClick={addToCart}
-              disabled={selectedStock < 1}
-              className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-white/40"
-            >
-              {selectedStock > 0 ? `Add to cart · ${resolvedSize}` : "Out of stock"}
-            </button>
-            <button
-              type="button"
-              onClick={() => toggleWishlist(currentProduct.id)}
-              className="rounded-full border border-white/35 bg-black/15 p-3 text-white transition hover:scale-[1.03] active:scale-[0.98]"
-              aria-label="Toggle wishlist"
-            >
-              <HeartIcon filled={isWishlisted(currentProduct.id)} />
-            </button>
+              <button
+                type="button"
+                onClick={addToCart}
+                disabled={isAddingToCart}
+                className="rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-white/40"
+              >
+                {isAddingToCart
+                  ? "Adding..."
+                  : selectedStock > 0
+                    ? `Add to cart · ${resolvedSize}`
+                    : "Out of stock"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void toggleWishlist(currentProduct.id)}
+                className="rounded-full border border-white/35 bg-black/15 p-3 text-white transition hover:scale-[1.03] active:scale-[0.98]"
+                aria-label="Toggle wishlist"
+              >
+                <HeartIcon filled={isWishlisted(currentProduct.id)} />
+              </button>
             </div>
           </div>
 
           <div className="relative flex h-full items-center justify-center">
             <div
-              className={`relative h-[52vh] w-full max-w-[500px] transition-all duration-300 sm:h-[58vh] ${
-                isChanging ? "scale-95 opacity-0" : "scale-100 opacity-100"
-              }`}
+              className={`relative h-[52vh] w-full max-w-[500px] transition-all duration-500 sm:h-[58vh] 
+                ${isChanging ?
+                  "scale-95 opacity-0"
+                  : "scale-100 opacity-100"
+                }`}
             >
               <Image
                 key={currentProduct.id}
                 src={currentProduct.image}
                 alt={currentProduct.name}
                 fill
+                sizes="(max-width: 768px) 100vw, 50vw"
                 className="object-contain drop-shadow-[0_24px_30px_rgba(0,0,0,0.3)]"
                 priority
               />
@@ -196,9 +250,8 @@ export function ImmersiveHome({ initialProductId }: ImmersiveHomeProps) {
           </div>
 
           <aside
-            className={`space-y-5 transition-all duration-300 lg:justify-self-end ${
-              isChanging ? "translate-y-3 opacity-0" : "translate-y-0 opacity-100"
-            }`}
+            className={`space-y-5 transition-all duration-300 lg:justify-self-end ${isChanging ? "translate-y-3 opacity-0" : "translate-y-0 opacity-100"
+              }`}
           >
             <div>
               <p className="text-6xl leading-none font-semibold tracking-tight">
@@ -223,13 +276,12 @@ export function ImmersiveHome({ initialProductId }: ImmersiveHomeProps) {
                       type="button"
                       onClick={() => setSelectedSize(size)}
                       disabled={stock === 0}
-                      className={`h-10 min-w-10 rounded-full px-3 text-sm font-semibold transition ${
-                        stock === 0
-                          ? "cursor-not-allowed border border-white/20 bg-black/20 text-white/35"
-                          : isSelected
-                            ? "bg-white text-black"
-                            : "border border-white/30 bg-black/15 text-white hover:bg-black/35"
-                      }`}
+                      className={`h-10 min-w-10 rounded-full px-3 text-sm font-semibold transition ${stock === 0
+                        ? "cursor-not-allowed border border-white/20 bg-black/20 text-white/35"
+                        : isSelected
+                          ? "bg-white text-black"
+                          : "border border-white/30 bg-black/15 text-white hover:bg-black/35"
+                        }`}
                       aria-label={`${size} size`}
                     >
                       {size}
@@ -248,14 +300,15 @@ export function ImmersiveHome({ initialProductId }: ImmersiveHomeProps) {
               <div className="mt-2 flex items-center gap-3">
                 <div className="relative h-14 w-14">
                   <Image
-                    src={products[(currentProductIndex + 1) % products.length].image}
-                    alt={products[(currentProductIndex + 1) % products.length].name}
+                    src={nextProduct.image}
+                    alt={nextProduct.name}
                     fill
+                    sizes="80px"
                     className="object-contain"
                   />
                 </div>
                 <p className="text-sm text-white/90">
-                  {products[(currentProductIndex + 1) % products.length].name}
+                  {nextProduct.name}
                 </p>
               </div>
             </div>

@@ -1,5 +1,7 @@
-export const SIZES = ["S", "M", "L", "XL"] as const;
+// src/data/products.ts
+import { supabase } from '@/src/lib/supabase'
 
+export const SIZES = ["S", "M", "L", "XL"] as const;
 export type Size = (typeof SIZES)[number];
 
 export type ProductTheme = {
@@ -22,7 +24,8 @@ export type Product = {
   tagline: string;
 };
 
-export const products: Product[] = [
+// Données locales (fallback)
+export const localProducts: Product[] = [
   {
     id: "blanc",
     color: "white",
@@ -168,3 +171,119 @@ export const products: Product[] = [
     tagline: "Natural tone, premium edge.",
   },
 ];
+
+// Type pour les données brutes de Supabase
+type SupabaseProduct = {
+  id: string;
+  color: string;
+  name: string;
+  description: string;
+  price: number;
+  old_price: number;
+  image: string;
+  bg: string;
+  bg_deep: string;
+  accent: string;
+  tagline: string;
+};
+
+type SupabaseProductSize = {
+  product_id: string;
+  size: Size;
+  stock: number;
+};
+
+// Cache pour les stocks
+let stockCache: Map<string, Record<Size, number>> | null = null;
+
+async function loadStocks(): Promise<Map<string, Record<Size, number>>> {
+  if (stockCache) return stockCache;
+  
+  const { data, error } = await supabase
+    .from('product_sizes')
+    .select('product_id, size, stock');
+  
+  if (error) throw error;
+  
+  const stockMap = new Map<string, Record<Size, number>>();
+  (data as SupabaseProductSize[]).forEach((item) => {
+    if (!stockMap.has(item.product_id)) {
+      stockMap.set(item.product_id, { S: 0, M: 0, L: 0, XL: 0 });
+    }
+    const sizes = stockMap.get(item.product_id)!;
+    sizes[item.size] = item.stock;
+  });
+  
+  stockCache = stockMap;
+  return stockMap;
+}
+
+function transformSupabaseProduct(item: SupabaseProduct, stocks: Record<Size, number>): Product {
+  return {
+    id: item.id,
+    color: item.color,
+    name: item.name,
+    subtitle: item.tagline, // Utilise tagline comme subtitle
+    description: item.description,
+    price: item.price,
+    oldPrice: item.old_price,
+    image: item.image,
+    theme: {
+      bg: item.bg,
+      bgDeep: item.bg_deep,
+      accent: item.accent,
+    },
+    sizes: stocks,
+    tagline: item.tagline,
+  };
+}
+
+export async function getProducts(): Promise<Product[]> {
+  try {
+    const [productsResult, stocksMap] = await Promise.all([
+      supabase.from('products').select('*'),
+      loadStocks()
+    ]);
+    
+    console.log('🔍 Supabase products result:', productsResult);
+    console.log('🔍 Supabase products error:', productsResult.error);
+    console.log('🔍 Supabase products data:', productsResult.data);
+    console.log('🔍 Stocks map:', stocksMap);
+    
+    if (productsResult.error) throw productsResult.error;
+    
+    if (productsResult.data && productsResult.data.length > 0) {
+      console.log(`✅ Chargé ${productsResult.data.length} produits depuis Supabase`);
+      return (productsResult.data as SupabaseProduct[]).map(product => 
+        transformSupabaseProduct(product, stocksMap.get(product.id) || { S: 0, M: 0, L: 0, XL: 0 })
+      );
+    }
+  } catch (error) {
+    console.error('❌ Erreur Supabase getProducts:', error);
+  }
+  
+  console.log('📦 Fallback sur les données locales');
+  return localProducts;
+}
+
+export async function getProductById(id: string): Promise<Product | null> {
+  try {
+    const [productResult, stocksMap] = await Promise.all([
+      supabase.from('products').select('*').eq('id', id).single(),
+      loadStocks()
+    ]);
+    
+    if (productResult.error) throw productResult.error;
+    
+    if (productResult.data) {
+      return transformSupabaseProduct(
+        productResult.data as SupabaseProduct, 
+        stocksMap.get(id) || { S: 0, M: 0, L: 0, XL: 0 }
+      );
+    }
+  } catch (error) {
+    console.error('❌ Erreur Supabase pour produit', id, error);
+  }
+  
+  return localProducts.find(p => p.id === id) || null;
+}

@@ -1,7 +1,14 @@
--- Run this in Supabase SQL Editor first.
+-- Créer l'extension pour UUID
 create extension if not exists pgcrypto;
 
-create table if not exists public.products (
+-- SUPPRIMER LES TABLES SI ELLES EXISTENT (ordre inverse pour les clés étrangères)
+drop table if exists public.wishlist cascade;
+drop table if exists public.cart_items cascade;
+drop table if exists public.product_sizes cascade;
+drop table if exists public.products cascade;
+
+-- TABLE products
+create table public.products (
   id text primary key,
   name text not null,
   color text not null,
@@ -15,7 +22,8 @@ create table if not exists public.products (
   tagline text not null
 );
 
-create table if not exists public.product_sizes (
+-- TABLE product_sizes (stocks par taille)
+create table public.product_sizes (
   id uuid primary key default gen_random_uuid(),
   product_id text not null references public.products(id) on delete cascade,
   size text not null check (size in ('S', 'M', 'L', 'XL')),
@@ -23,7 +31,8 @@ create table if not exists public.product_sizes (
   unique (product_id, size)
 );
 
-create table if not exists public.cart_items (
+-- TABLE cart_items (panier)
+create table public.cart_items (
   id uuid primary key default gen_random_uuid(),
   product_id text not null references public.products(id) on delete cascade,
   size text not null check (size in ('S', 'M', 'L', 'XL')),
@@ -31,17 +40,20 @@ create table if not exists public.cart_items (
   unique (product_id, size)
 );
 
-create table if not exists public.wishlist (
+-- TABLE wishlist (liste de souhaits)
+create table public.wishlist (
   id uuid primary key default gen_random_uuid(),
   product_id text not null references public.products(id) on delete cascade,
   unique (product_id)
 );
 
+-- ACTIVER ROW LEVEL SECURITY
 alter table public.products enable row level security;
 alter table public.product_sizes enable row level security;
 alter table public.cart_items enable row level security;
 alter table public.wishlist enable row level security;
 
+-- POLITIQUES DE SÉCURITÉ pour products
 drop policy if exists "Public read products" on public.products;
 create policy "Public read products"
   on public.products
@@ -49,6 +61,7 @@ create policy "Public read products"
   to anon
   using (true);
 
+-- POLITIQUES DE SÉCURITÉ pour product_sizes
 drop policy if exists "Public read product sizes" on public.product_sizes;
 create policy "Public read product sizes"
   on public.product_sizes
@@ -56,6 +69,7 @@ create policy "Public read product sizes"
   to anon
   using (true);
 
+-- POLITIQUES DE SÉCURITÉ pour cart_items
 drop policy if exists "Public read cart items" on public.cart_items;
 drop policy if exists "Public write cart items" on public.cart_items;
 create policy "Public read cart items"
@@ -70,6 +84,7 @@ create policy "Public write cart items"
   using (true)
   with check (true);
 
+-- POLITIQUES DE SÉCURITÉ pour wishlist
 drop policy if exists "Public read wishlist" on public.wishlist;
 drop policy if exists "Public write wishlist" on public.wishlist;
 create policy "Public read wishlist"
