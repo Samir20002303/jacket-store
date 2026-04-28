@@ -1,10 +1,11 @@
--- Run this after supabase/schema.sql
--- Vider les tables dans l'ordre (respect des clés étrangères)
-delete from public.cart_items;
-delete from public.wishlist;
-delete from public.product_sizes;
-delete from public.products;
 
+
+
+-- Run this after supabase/schema.sql
+truncate table public.cart_items restart identity;
+truncate table public.wishlist restart identity;
+truncate table public.product_sizes restart identity cascade;
+truncate table public.products restart identity cascade;
 -- INSERTION DES PRODUITS
 insert into public.products (id, name, color, description, price, old_price, image, bg, bg_deep, accent, tagline) values
 ('blanc', 'Arctic Halo Puffer', 'white', 'Tailored in luminous technical shell, this piece pairs winter protection with a refined city silhouette.', 189, 229, '/jackets/blanc.png', '#D9DEE5', '#B2BBC7', '#2D3748', 'Light tone, bold intent.'),
@@ -26,3 +27,13 @@ insert into public.product_sizes (product_id, size, stock) values
 ('rose', 'S', 5), ('rose', 'M', 0), ('rose', 'L', 3), ('rose', 'XL', 4),
 ('rouge', 'S', 1), ('rouge', 'M', 4), ('rouge', 'L', 5), ('rouge', 'XL', 0),
 ('vert', 'S', 0), ('vert', 'M', 3), ('vert', 'L', 6), ('vert', 'XL', 2);
+
+-- OPTIONNEL : Ajouter quelques articles au panier pour tester
+-- insert into public.cart_items (product_id, size, quantity) values
+-- ('blanc', 'S', 2),
+-- ('noir', 'XL', 1);
+
+-- OPTIONNEL : Ajouter quelques articles à la wishlist pour tester
+-- insert into public.wishlist (product_id) values
+-- ('bleu'),
+-- ('rouge');

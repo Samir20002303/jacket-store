@@ -3,21 +3,24 @@
 import { createContext, useContext, useMemo, useCallback, useEffect, useReducer } from "react";
 import type { Product, Size } from "@/src/lib/actions/products";
 import { getProducts } from "@/src/lib/actions/products";
-import { supabase } from "@/src/lib/supabase/client";
 import { useAuth } from "@/src/context/auth-context";
+import {
+  fetchCartItems,
+  addCartItem,
+  updateCartItemQuantity,
+  removeCartItem,
+  fetchAllValidReservations,
+} from "@/src/lib/actions/cart";
+import {
+  fetchWishlist,
+  addWishlistItem,
+  removeWishlistItem,
+} from "@/src/lib/actions/wishlist";
+import type { CartItem } from "@/src/types";
+
+const RESERVATION_SECONDS = 20;
 
 let globalStockCache: Record<string, number> = {};
-
-
-export type CartItem = {
-  productId: string;
-  name: string;
-  image: string;
-  size: Size;
-  color: string;
-  price: number;
-  quantity: number;
-};
 
 type State = {
   cart: CartItem[];
@@ -105,7 +108,6 @@ type StoreContextValue = {
 const StoreContext = createContext<StoreContextValue | null>(null);
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const RESERVATION_SECONDS = 20;
   const { user, isLoading } = useAuth();
   const [state, dispatch] = useReducer(reducer, {
     cart: [],
@@ -114,15 +116,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   });
 
   const refreshGlobalCache = useCallback(async () => {
-    const { data } = await supabase.rpc("get_valid_cart_items"); // ← ici
+    const data = await fetchAllValidReservations();
     globalStockCache = {};
-    (data as { product_id: string; size: string; total_quantity: number }[] | null)?.forEach((item) => {
+    data.forEach((item) => {
       const key = `${item.product_id}-${item.size}`;
       globalStockCache[key] = item.total_quantity;
     });
   }, []);
 
-  // Rafraîchir le cache toutes les 2 secondes
   useEffect(() => {
     if (!user) return;
 
@@ -144,19 +145,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     async function load() {
       const products = await getProducts();
-
-      const [cartResult, wishlistResult] = await Promise.all([
-        supabase.from("cart_items").select("*").eq("user_id", user!.id),
-        supabase.from("wishlist").select("product_id").eq("user_id", user!.id),
+    
+      const [rawCartItems, wishlistItems] = await Promise.all([
+        fetchCartItems(user!.id),
+        fetchWishlist(user!.id),
       ]);
-
+    
       if (cancelled) return;
-
+    
       await refreshGlobalCache();
-
-      const cartData = cartResult.data;
-      const cart = cartData
-        ? (cartData as Record<string, unknown>[]).map((item) => {
+    
+      // Transformer les données brutes en CartItem avec les infos produits
+      const cart = (rawCartItems as Array<Record<string, unknown>>)
+        .map((item) => {
           const product = products.find((p) => p.id === item.product_id);
           if (!product) return null;
           return {
@@ -168,14 +169,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             price: product.price,
             quantity: item.quantity as number,
           };
-        }).filter((item): item is CartItem => item !== null)
-        : [];
-
-      const wishlist = wishlistResult.data
-        ? (wishlistResult.data as { product_id: string }[]).map((item) => item.product_id)
-        : [];
-
-      dispatch({ type: "SET_DATA", cart, wishlist, products });
+        })
+        .filter((item): item is CartItem => item !== null);
+    
+      dispatch({ type: "SET_DATA", cart, wishlist: wishlistItems, products });
     }
 
     load();
@@ -195,8 +192,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-
-
   const addToCart = useCallback(
     async (product: Product, size: Size) => {
       if (!user) return false;
@@ -215,14 +210,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
       if (existing) {
         const newQuantity = existing.quantity + 1;
-        const { error } = await supabase
-          .from("cart_items")
-          .update({ quantity: newQuantity, reserved_until: expiresAt })
-          .eq("user_id", user.id)
-          .eq("product_id", product.id)
-          .eq("size", size);
-
-        if (error) return false;
+        await updateCartItemQuantity(user.id, product.id, size, newQuantity, expiresAt);
         dispatch({ type: "UPDATE_QUANTITY", productId: product.id, size, quantity: newQuantity });
       } else {
         const newItem: CartItem = {
@@ -235,18 +223,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           quantity: 1,
         };
         dispatch({ type: "ADD_TO_CART", item: newItem });
-      
-        const { error } = await supabase.from("cart_items").upsert({
-          user_id: user.id,
-          product_id: product.id,
-          size,
-          quantity: 1,
-          reserved_until: expiresAt,
-        }, {
-          onConflict: 'user_id, product_id, size'
-        });
-      
-        if (error) {
+
+        try {
+          await addCartItem(user.id, product.id, size, 1, expiresAt);
+        } catch {
           dispatch({ type: "REMOVE_FROM_CART", productId: product.id, size });
           return false;
         }
@@ -263,14 +243,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (!user) return;
 
       dispatch({ type: "REMOVE_FROM_CART", productId, size });
-
-      await supabase
-        .from("cart_items")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("product_id", productId)
-        .eq("size", size);
-
+      await removeCartItem(user.id, productId, size);
       await refreshGlobalCache();
     },
     [user, refreshGlobalCache],
@@ -295,22 +268,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const delta = quantity - currentUserQty;
 
       const available = maxStock - totalReserved + currentUserQty;
-      if (delta > 0 && available < delta) {
-        // Ne pas retourner false, simplement sortir
-        return;
-      }
+      if (delta > 0 && available < delta) return;
 
       const expiresAt = new Date(Date.now() + RESERVATION_SECONDS * 1000).toISOString();
 
-      const { error } = await supabase
-        .from("cart_items")
-        .update({ quantity, reserved_until: expiresAt })
-        .eq("user_id", user.id)
-        .eq("product_id", productId)
-        .eq("size", size);
-
-      if (error) return;
-
+      await updateCartItemQuantity(user.id, productId, size, quantity, expiresAt);
       dispatch({ type: "UPDATE_QUANTITY", productId, size, quantity });
       await refreshGlobalCache();
     },
@@ -324,20 +286,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const wasWishlisted = state.wishlist.includes(productId);
       dispatch({ type: "TOGGLE_WISHLIST", productId });
 
-      if (wasWishlisted) {
-        const { error } = await supabase
-          .from("wishlist")
-          .delete()
-          .eq("user_id", user.id)
-          .eq("product_id", productId);
-
-        if (error) dispatch({ type: "ROLLBACK_WISHLIST", productId, wasWishlisted });
-      } else {
-        const { error } = await supabase
-          .from("wishlist")
-          .insert({ user_id: user.id, product_id: productId });
-
-        if (error) dispatch({ type: "ROLLBACK_WISHLIST", productId, wasWishlisted });
+      try {
+        if (wasWishlisted) {
+          await removeWishlistItem(user.id, productId);
+        } else {
+          await addWishlistItem(user.id, productId);
+        }
+      } catch {
+        dispatch({ type: "ROLLBACK_WISHLIST", productId, wasWishlisted });
       }
     },
     [state.wishlist, user],

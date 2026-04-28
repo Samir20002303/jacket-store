@@ -34,20 +34,17 @@ create table public.product_sizes (
 -- TABLE cart_items (panier)
 create table public.cart_items (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
   product_id text not null references public.products(id) on delete cascade,
   size text not null check (size in ('S', 'M', 'L', 'XL')),
   quantity integer not null check (quantity > 0),
-  reserved_until timestamptz not null default (now() + interval '5 minutes'),
-  unique (user_id, product_id, size)
+  unique (product_id, size)
 );
 
 -- TABLE wishlist (liste de souhaits)
 create table public.wishlist (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
   product_id text not null references public.products(id) on delete cascade,
-  unique (user_id, product_id)
+  unique (product_id)
 );
 
 -- ACTIVER ROW LEVEL SECURITY
@@ -56,40 +53,48 @@ alter table public.product_sizes enable row level security;
 alter table public.cart_items enable row level security;
 alter table public.wishlist enable row level security;
 
--- POLITIQUES pour products
+-- POLITIQUES DE SÉCURITÉ pour products
+drop policy if exists "Public read products" on public.products;
 create policy "Public read products"
   on public.products
   for select
+  to anon
   using (true);
 
--- POLITIQUES pour product_sizes
+-- POLITIQUES DE SÉCURITÉ pour product_sizes
+drop policy if exists "Public read product sizes" on public.product_sizes;
 create policy "Public read product sizes"
   on public.product_sizes
   for select
+  to anon
   using (true);
 
--- POLITIQUES pour cart_items
-create policy "Users manage their cart"
+-- POLITIQUES DE SÉCURITÉ pour cart_items
+drop policy if exists "Public read cart items" on public.cart_items;
+drop policy if exists "Public write cart items" on public.cart_items;
+create policy "Public read cart items"
+  on public.cart_items
+  for select
+  to anon
+  using (true);
+create policy "Public write cart items"
   on public.cart_items
   for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+  to anon
+  using (true)
+  with check (true);
 
--- POLITIQUES pour wishlist
-create policy "Users manage their wishlist"
+-- POLITIQUES DE SÉCURITÉ pour wishlist
+drop policy if exists "Public read wishlist" on public.wishlist;
+drop policy if exists "Public write wishlist" on public.wishlist;
+create policy "Public read wishlist"
+  on public.wishlist
+  for select
+  to anon
+  using (true);
+create policy "Public write wishlist"
   on public.wishlist
   for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
-
--- FONCTIONS RPC
-create or replace function get_valid_cart_items()
-returns table(product_id text, size text, total_quantity bigint)
-security definer
-set search_path = ''
-as $$
-  select ci.product_id, ci.size, sum(ci.quantity)::bigint
-  from public.cart_items ci
-  where ci.reserved_until > now()
-  group by ci.product_id, ci.size;
-$$ language sql;
+  to anon
+  using (true)
+  with check (true);
