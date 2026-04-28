@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { CartIcon, HeartIcon } from "@/src/components/icons";
+import { CartIcon, HeartIcon } from "@/src/components/ui/icons";
 import { useStore } from "@/src/context/store-context";
 import { useAuth } from "@/src/context/auth-context";
-import { AuthModal } from "@/src/components/auth-modal";
+import { AuthModal } from "@/src/components/ui/auth-modal";
 
 const NAV_ITEMS = [
   { href: "/", label: "Home" },

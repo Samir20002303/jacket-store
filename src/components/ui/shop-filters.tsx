@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo } from "react";
-import { SIZES, type Product } from "@/src/data/products";
+import { SIZES, type Product } from "@/src/lib/actions/products";
 
 const COLORS = [
   { value: "white", label: "White", bg: "bg-white border-gray-300" },

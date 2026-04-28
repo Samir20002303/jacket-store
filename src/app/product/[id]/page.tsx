@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
-import { ImmersiveHome } from "@/src/components/immersive-home";
-import { getProductById, getProducts } from "@/src/data/products";
+import { ImmersiveHome } from "@/src/components/immersive/immersive-home";
+import { getProductById, getProducts } from "@/src/lib/actions/products";
 
 type ProductPageProps = {
   params: Promise<{ id: string }>;

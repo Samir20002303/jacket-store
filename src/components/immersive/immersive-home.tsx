@@ -2,10 +2,10 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SIZES, type Product, type Size } from "@/src/data/products";
+import { SIZES, type Product, type Size } from "@/src/lib/actions/products";
 import { useStore } from "@/src/context/store-context";
-import { HeartIcon } from "@/src/components/icons";
-import { SiteHeader } from "@/src/components/site-header";
+import { HeartIcon } from "@/src/components/ui/icons";
+import { SiteHeader } from "@/src/components/ui/site-header";
 import { useRouter, usePathname } from "next/navigation";
 
 

@@ -1,5 +1,5 @@
 // src/data/products.ts
-import { supabase } from '@/src/lib/supabase'
+import { supabase } from '@/src/lib/supabase/client'
 
 export const SIZES = ["S", "M", "L", "XL"] as const;
 export type Size = (typeof SIZES)[number];

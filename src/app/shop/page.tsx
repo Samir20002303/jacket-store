@@ -1,8 +1,8 @@
-import { getProducts } from "@/src/data/products";
-import { ShopProductCard } from "@/src/components/shop-product-card";
-import { ShopFilters } from "@/src/components/shop-filters";
-import { StandardPageShell } from "@/src/components/standard-page-shell";
-import type { Product, Size } from "@/src/data/products";
+import { getProducts } from "@/src/lib/actions/products";
+import { ShopProductCard } from "@/src/components/ui/shop-product-card";
+import { ShopFilters } from "@/src/components/ui/shop-filters";
+import { StandardPageShell } from "@/src/components/ui/standard-page-shell";
+import type { Product, Size } from "@/src/lib/actions/products";
 
 type ShopPageProps = {
   searchParams: Promise<{ color?: string; size?: string; price?: string }>;

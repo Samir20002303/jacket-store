@@ -3,8 +3,8 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { CartIcon, HeartIcon } from "@/src/components/icons";
-import { SIZES, type Product, type Size } from "@/src/data/products";
+import { CartIcon, HeartIcon } from "@/src/components/ui/icons";
+import { SIZES, type Product, type Size } from "@/src/lib/actions/products";
 import { useStore } from "@/src/context/store-context";
 
 

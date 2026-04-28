@@ -1,9 +1,9 @@
 "use client";
 
 import { createContext, useContext, useMemo, useCallback, useEffect, useReducer } from "react";
-import type { Product, Size } from "@/src/data/products";
-import { getProducts } from "@/src/data/products";
-import { supabase } from "@/src/lib/supabase";
+import type { Product, Size } from "@/src/lib/actions/products";
+import { getProducts } from "@/src/lib/actions/products";
+import { supabase } from "@/src/lib/supabase/client";
 import { useAuth } from "@/src/context/auth-context";
 
 let globalStockCache: Record<string, number> = {};
@@ -183,7 +183,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [user, isLoading]);
+  }, [user, isLoading, refreshGlobalCache]);
 
   const getRemainingStock = useCallback(
     (product: Product, size: Size) => {

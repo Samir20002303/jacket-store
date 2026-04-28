@@ -2,9 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { StandardPageShell } from "@/src/components/standard-page-shell";
+import { StandardPageShell } from "@/src/components/ui/standard-page-shell";
 import { useStore } from "@/src/context/store-context";
-import type { Size } from "@/src/data/products";
+import type { Size } from "@/src/lib/actions/products";
 
 export default function CartPage() {
   const { cart, totalCartItems, updateQuantity, removeFromCart } = useStore();

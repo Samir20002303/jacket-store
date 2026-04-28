@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { SiteHeader } from "@/src/components/site-header";
+import { SiteHeader } from "@/src/components/ui/site-header";
 
 type StandardPageShellProps = {
   title: string;

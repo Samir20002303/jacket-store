@@ -1,10 +1,10 @@
 "use client";
 
 import Image from "next/image";
-import { StandardPageShell } from "@/src/components/standard-page-shell";
-import { HeartIcon } from "@/src/components/icons";
+import { StandardPageShell } from "@/src/components/ui/standard-page-shell";
+import { HeartIcon } from "@/src/components/ui/icons";
 import { useEffect, useState } from "react";
-import { getProducts, type Product } from "@/src/data/products";
+import { getProducts, type Product } from "@/src/lib/actions/products";
 import { useStore } from "@/src/context/store-context";
 
 export default function WishlistPage() {

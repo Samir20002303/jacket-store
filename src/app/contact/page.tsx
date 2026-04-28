@@ -1,4 +1,4 @@
-import { StandardPageShell } from "@/src/components/standard-page-shell";
+import { StandardPageShell } from "@/src/components/ui/standard-page-shell";
 
 export default function ContactPage() {
   return (
