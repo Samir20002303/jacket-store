@@ -27,7 +27,7 @@ type ShopFiltersProps = {
   filteredProducts: Product[];
 };
 
-export function ShopFilters({ products, filteredProducts }: ShopFiltersProps) {
+export function ShopFilters({ filteredProducts }: ShopFiltersProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 

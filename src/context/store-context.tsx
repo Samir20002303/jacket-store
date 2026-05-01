@@ -16,6 +16,7 @@ import {
   addWishlistItem,
   removeWishlistItem,
 } from "@/src/lib/actions/wishlist";
+import { addToCartSchema, updateCartQuantitySchema, removeFromCartSchema } from "@/src/lib/validations";
 import type { CartItem } from "@/src/types";
 
 const RESERVATION_SECONDS = 20;
@@ -97,6 +98,7 @@ type StoreContextValue = {
   wishlist: string[];
   addToCart: (product: Product, size: Size) => Promise<boolean>;
   getRemainingStock: (product: Product, size: Size) => number;
+  getProductStock: (productId: string, size: Size) => number;
   toggleWishlist: (productId: string) => Promise<void>;
   isWishlisted: (productId: string) => boolean;
   totalCartItems: number;
@@ -106,6 +108,32 @@ type StoreContextValue = {
 };
 
 const StoreContext = createContext<StoreContextValue | null>(null);
+
+const GUEST_CART_KEY = "guest_cart";
+const GUEST_WISHLIST_KEY = "guest_wishlist";
+
+function saveGuestData(cart: CartItem[], wishlist: string[]) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem(GUEST_CART_KEY, JSON.stringify(cart));
+    localStorage.setItem(GUEST_WISHLIST_KEY, JSON.stringify(wishlist));
+  }
+}
+
+function loadGuestData(): { cart: CartItem[]; wishlist: string[] } {
+  if (typeof window !== "undefined") {
+    const cart = JSON.parse(localStorage.getItem(GUEST_CART_KEY) || "[]");
+    const wishlist = JSON.parse(localStorage.getItem(GUEST_WISHLIST_KEY) || "[]");
+    return { cart, wishlist };
+  }
+  return { cart: [], wishlist: [] };
+}
+
+function clearGuestData() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(GUEST_CART_KEY);
+    localStorage.removeItem(GUEST_WISHLIST_KEY);
+  }
+}
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -126,37 +154,62 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!user) return;
-
-    const interval = setInterval(() => {
-      refreshGlobalCache();
-    }, 10000);
-
+    const interval = setInterval(() => refreshGlobalCache(), 10000);
     return () => clearInterval(interval);
   }, [user, refreshGlobalCache]);
 
   useEffect(() => {
     if (isLoading) return;
-
-    dispatch({ type: "CLEAR" });
-
-    if (!user) return;
-
+  
+    if (!user) {
+      // Charger le panier guest depuis localStorage
+      const guestData = loadGuestData();
+      const cart = guestData.cart.length > 0 ? guestData.cart : state.cart;
+      const wishlist = guestData.wishlist.length > 0 ? guestData.wishlist : state.wishlist;
+      
+      dispatch({ type: "CLEAR" });
+      for (const item of cart) {
+        dispatch({ type: "ADD_TO_CART", item });
+      }
+      for (const id of wishlist) {
+        dispatch({ type: "TOGGLE_WISHLIST", productId: id });
+      }
+      return;
+    }
+  
     let cancelled = false;
-
+  
     async function load() {
       const products = await getProducts();
-    
       const [rawCartItems, wishlistItems] = await Promise.all([
         fetchCartItems(user!.id),
         fetchWishlist(user!.id),
       ]);
-    
+  
       if (cancelled) return;
-    
       await refreshGlobalCache();
-    
-      // Transformer les données brutes en CartItem avec les infos produits
-      const cart = (rawCartItems as Array<Record<string, unknown>>)
+  
+      const guestData = loadGuestData();
+      const mergedWishlist = [...new Set([...wishlistItems, ...guestData.wishlist])];
+  
+      const rawMergedCart = [...(rawCartItems as Record<string, unknown>[])];
+      for (const guestItem of guestData.cart) {
+        const existing = rawMergedCart.find(
+          (i) => i.product_id === guestItem.productId && i.size === guestItem.size
+        );
+        if (existing) {
+          existing.quantity = (existing.quantity as number) + guestItem.quantity;
+        } else {
+          rawMergedCart.push({
+            product_id: guestItem.productId,
+            size: guestItem.size,
+            quantity: guestItem.quantity,
+            user_id: user!.id,
+          });
+        }
+      }
+  
+      const cart = rawMergedCart
         .map((item) => {
           const product = products.find((p) => p.id === item.product_id);
           if (!product) return null;
@@ -171,16 +224,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           };
         })
         .filter((item): item is CartItem => item !== null);
-    
-      dispatch({ type: "SET_DATA", cart, wishlist: wishlistItems, products });
+  
+      for (const guestItem of guestData.cart) {
+        const expiresAt = new Date(Date.now() + RESERVATION_SECONDS * 1000).toISOString();
+        try { await addCartItem(user!.id, guestItem.productId, guestItem.size, guestItem.quantity, expiresAt); } catch { }
+      }
+      for (const productId of guestData.wishlist) {
+        try { await addWishlistItem(user!.id, productId); } catch { }
+      }
+  
+      clearGuestData();
+      await refreshGlobalCache();
+  
+      dispatch({ type: "CLEAR" }); // Vider l'ancien état
+      dispatch({ type: "SET_DATA", cart, wishlist: mergedWishlist, products });
     }
-
+  
     load();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [user, isLoading, refreshGlobalCache]);
+
+  useEffect(() => {
+    if (!user) {
+      saveGuestData(state.cart, state.wishlist);
+    }
+  }, [state.cart, state.wishlist, user]);
 
   const getRemainingStock = useCallback(
     (product: Product, size: Size) => {
@@ -194,24 +262,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const addToCart = useCallback(
     async (product: Product, size: Size) => {
-      if (!user) return false;
-
-      const cacheKey = `${product.id}-${size}`;
-      const totalReserved = globalStockCache[cacheKey] ?? 0;
-      const maxStock = product.sizes[size] ?? 0;
-      const available = maxStock - totalReserved;
-      if (available < 1) return false;
-
+      const validation = addToCartSchema.safeParse({ productId: product.id, size });
+      if (!validation.success) return false;
+  
       const existing = state.cart.find(
         (item) => item.productId === product.id && item.size === size,
       );
-
-      const expiresAt = new Date(Date.now() + RESERVATION_SECONDS * 1000).toISOString();
-
+  
       if (existing) {
         const newQuantity = existing.quantity + 1;
-        await updateCartItemQuantity(user.id, product.id, size, newQuantity, expiresAt);
         dispatch({ type: "UPDATE_QUANTITY", productId: product.id, size, quantity: newQuantity });
+  
+        if (user) {
+          const expiresAt = new Date(Date.now() + RESERVATION_SECONDS * 1000).toISOString();
+          await updateCartItemQuantity(user.id, product.id, size, newQuantity, expiresAt);
+          await refreshGlobalCache();
+        }
       } else {
         const newItem: CartItem = {
           productId: product.id,
@@ -223,40 +289,50 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           quantity: 1,
         };
         dispatch({ type: "ADD_TO_CART", item: newItem });
-
-        try {
-          await addCartItem(user.id, product.id, size, 1, expiresAt);
-        } catch {
-          dispatch({ type: "REMOVE_FROM_CART", productId: product.id, size });
-          return false;
+  
+        if (user) {
+          const expiresAt = new Date(Date.now() + RESERVATION_SECONDS * 1000).toISOString();
+          try {
+            await addCartItem(user.id, product.id, size, 1, expiresAt);
+            await refreshGlobalCache();
+          } catch {
+            dispatch({ type: "REMOVE_FROM_CART", productId: product.id, size });
+            return false;
+          }
         }
       }
-
-      await refreshGlobalCache();
+  
       return true;
     },
     [state.cart, user, refreshGlobalCache],
   );
 
-  const removeFromCart = useCallback(
-    async (productId: string, size: Size) => {
-      if (!user) return;
+const removeFromCart = useCallback(
+  async (productId: string, size: Size) => {
+    const validation = removeFromCartSchema.safeParse({ productId, size });
+    if (!validation.success) return;
 
-      dispatch({ type: "REMOVE_FROM_CART", productId, size });
+    dispatch({ type: "REMOVE_FROM_CART", productId, size });
+
+    if (user) {
       await removeCartItem(user.id, productId, size);
       await refreshGlobalCache();
-    },
-    [user, refreshGlobalCache],
-  );
+    }
+  },
+  [user, refreshGlobalCache],
+);
 
-  const updateQuantity = useCallback(
-    async (productId: string, size: Size, quantity: number) => {
-      if (!user) return;
-      if (quantity < 1) {
-        await removeFromCart(productId, size);
-        return;
-      }
+const updateQuantity = useCallback(
+  async (productId: string, size: Size, quantity: number) => {
+    const validation = updateCartQuantitySchema.safeParse({ productId, size, quantity });
+    if (!validation.success) return;
 
+    if (quantity < 1) {
+      await removeFromCart(productId, size);
+      return;
+    }
+
+    if (user) {
       const cacheKey = `${productId}-${size}`;
       const product = state.products.find((p) => p.id === productId);
       const maxStock = product?.sizes?.[size] ?? 0;
@@ -266,26 +342,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       );
       const currentUserQty = currentUserItem?.quantity ?? 0;
       const delta = quantity - currentUserQty;
-
       const available = maxStock - totalReserved + currentUserQty;
       if (delta > 0 && available < delta) return;
 
       const expiresAt = new Date(Date.now() + RESERVATION_SECONDS * 1000).toISOString();
-
       await updateCartItemQuantity(user.id, productId, size, quantity, expiresAt);
-      dispatch({ type: "UPDATE_QUANTITY", productId, size, quantity });
       await refreshGlobalCache();
-    },
-    [user, removeFromCart, state.cart, state.products, refreshGlobalCache],
-  );
+    }
 
-  const toggleWishlist = useCallback(
-    async (productId: string) => {
-      if (!user) return;
+    dispatch({ type: "UPDATE_QUANTITY", productId, size, quantity });
+  },
+  [user, removeFromCart, state.cart, state.products, refreshGlobalCache],
+);
 
-      const wasWishlisted = state.wishlist.includes(productId);
-      dispatch({ type: "TOGGLE_WISHLIST", productId });
+const toggleWishlist = useCallback(
+  async (productId: string) => {
+    const wasWishlisted = state.wishlist.includes(productId);
+    dispatch({ type: "TOGGLE_WISHLIST", productId });
 
+    if (user) {
       try {
         if (wasWishlisted) {
           await removeWishlistItem(user.id, productId);
@@ -295,9 +370,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       } catch {
         dispatch({ type: "ROLLBACK_WISHLIST", productId, wasWishlisted });
       }
-    },
-    [state.wishlist, user],
-  );
+    }
+  },
+  [state.wishlist, user],
+);
 
   const isWishlisted = useCallback(
     (productId: string) => state.wishlist.includes(productId),
@@ -309,11 +385,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [state.cart],
   );
 
+  const getProductStock = useCallback(
+    (productId: string, size: Size) => {
+      const cacheKey = `${productId}-${size}`;
+      const product = state.products.find((p) => p.id === productId);
+      const maxStock = product?.sizes?.[size] ?? 0;
+      const totalReserved = globalStockCache[cacheKey] ?? 0;
+      return Math.max(0, maxStock - totalReserved);
+    },
+    [state.products],
+  );
+
   const value: StoreContextValue = {
     cart: state.cart,
     wishlist: state.wishlist,
     addToCart,
     getRemainingStock,
+    getProductStock,
     toggleWishlist,
     isWishlisted,
     totalCartItems,

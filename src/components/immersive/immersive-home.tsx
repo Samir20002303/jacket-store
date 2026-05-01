@@ -55,24 +55,6 @@ export function ImmersiveHome({ products, initialProductId }: ImmersiveHomeProps
 
   );
 
-  //  ANNIMATION - ne se déclenche qu'une seule fois, ignore les changements d'URL
-  // const hasEntered = useRef(false);
-  // const [showImage, setShowImage] = useState(false);
-
-  // useEffect(() => {
-  //   if (!hasEntered.current) {
-  //     hasEntered.current = true;
-  //     requestAnimationFrame(() => {
-  //       requestAnimationFrame(() => {
-  //         setShowImage(true);
-  //       });
-  //     });
-  //   } else {
-  //     // Pour les navigations suivantes (changement d'URL), l'image est déjà visible
-  //     setShowImage(true);
-  //   }
-  // }, []);
-
   const router = useRouter();
   const pathname = usePathname();
 
