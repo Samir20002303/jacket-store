@@ -60,11 +60,10 @@ export function SiteHeader({ className = "", darkText = false }: SiteHeaderProps
                 <li key={item.href}>
                   <Link
                     href={item.href}
-                    className={`rounded-full px-4 py-2 text-xs font-medium tracking-wide transition ${
-                      active
+                    className={`rounded-full px-4 py-2 text-xs font-medium tracking-wide transition ${active
                         ? "bg-white text-black"
                         : `${mutedText} hover:bg-white/20 hover:text-black`
-                    }`}
+                      }`}
                   >
                     {item.label}
                   </Link>
@@ -99,6 +98,16 @@ export function SiteHeader({ className = "", darkText = false }: SiteHeaderProps
                       {user.email}
                     </div>
                     <hr className="my-1 border-white/10" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        router.push("/account");
+                        setDropdownOpen(false);
+                      }}
+                      className="w-full rounded-lg px-3 py-2 text-left text-sm text-white/70 hover:bg-white/10 hover:text-white transition"
+                    >
+                      My account
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
